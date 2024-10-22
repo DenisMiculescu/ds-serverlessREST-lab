@@ -1,15 +1,16 @@
 import { Handler } from "aws-lambda";
-
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 
 const ddbDocClient = createDDbDocClient();
 
-export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {     // Note change
+export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
     console.log("[EVENT]", JSON.stringify(event));
-    const parameters  = event?.pathParameters;
+
+    // Extract movieId from path parameters
+    const parameters = event?.pathParameters;
     const movieId = parameters?.movieId ? parseInt(parameters.movieId) : undefined;
 
     if (!movieId) {
@@ -22,13 +23,19 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {    
       };
     }
 
+    // Check if the 'cast=true' query string parameter is present
+    const includeCast = event.queryStringParameters?.cast === 'true';
+
+    // Get movie from DynamoDB
     const commandOutput = await ddbDocClient.send(
       new GetCommand({
         TableName: process.env.TABLE_NAME,
         Key: { id: movieId },
       })
     );
+
     console.log("GetCommand response: ", commandOutput);
+
     if (!commandOutput.Item) {
       return {
         statusCode: 404,
@@ -38,9 +45,10 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {    
         body: JSON.stringify({ Message: "Invalid movie Id" }),
       };
     }
-    const body = {
-      data: commandOutput.Item,
-    };
+
+    // Prepare response body based on the 'cast' query parameter
+    const movie = commandOutput.Item;
+    const response = includeCast ? movie : { ...movie, cast: undefined };
 
     // Return Response
     return {
@@ -48,7 +56,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {    
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ data: response }),
     };
   } catch (error: any) {
     console.log(JSON.stringify(error));
